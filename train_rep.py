@@ -29,26 +29,6 @@ def set_seed(seed):
     np.random.seed(seed)
     random.seed(seed)
     torch.backends.cudnn.deterministic = True
-
-    
-    
-def validate(model, val_loader):
-    model.train(False)
-    avg_mae = 0.0
-    cnt = 0
-    with torch.no_grad():
-        for image, shape, name, mask in val_loader:
-            image, mask = image.cuda().float(), mask.cuda().float()
-            sout1, sout2, sout3, out = model(image)
-            out = F.interpolate(out, size=shape[0][0], mode='bilinear', align_corners=False)
-            pred = torch.sigmoid(out[0, 0])
-            #pred = (pred - pred.min()) / (pred.max() - pred.min() + 1e-8)
-            avg_mae += torch.abs(pred - mask).mean().item()
-            cnt += len(image)
-
-    model.train(True)
-    print('num_image:', cnt)
-    return (avg_mae / cnt)
     
     
 
@@ -58,11 +38,6 @@ def train(Dataset, Network):
     data   = Dataset.Data(cfg)
     loader = DataLoader(data, collate_fn=data.collate, batch_size=cfg.batch, shuffle=True, pin_memory=True, num_workers=0)
     print(len(loader))
-    val_cfg    = Dataset.Config(datapath='./dataset/ESDIs/test', mode='test', imgsize=224)
-    val_data   = Dataset.Data(val_cfg)
-    val_loader = DataLoader(val_data, batch_size=1, shuffle=False, num_workers=0)
-    min_mae = 1.0
-    best_epoch = 0
     ##network
     net = Network(cfg)
     net.train(True)
@@ -109,28 +84,22 @@ def train(Dataset, Network):
 
             global_step += 1
             if step%10 == 0:
-                print('%s | step:%d/%d/%d | base_lr=%.6f | loss_hyb=%.6f | loss_so=%.6f'
+                print('%s | step:%d/%d/%d | base_lr=%.6f | loss_hyb=%.6f'
                     %(datetime.datetime.now(),  global_step, epoch+1, cfg.epoch, optimizer.param_groups[0]['lr'], 
-                       lossce.item(), loss_so.item()))
+                       loss.item()))
 
 
         if not os.path.exists(cfg.savepath):
             os.makedirs(cfg.savepath)
             
         if (epoch+1)%50==0 and epoch > (cfg.epoch//2):
-            mae = validate(net, val_loader)
-            print('VAL MAE:%s' % (mae))
-            
-            if mae < min_mae :
-                min_mae = mae
-                best_epoch = epoch + 1
-                repnet = reparameterize_model(net)
-                torch.save(repnet.state_dict(), cfg.savepath + '/model-best.pth')
-                print('best epoch is:%d, MAE:%s' % (best_epoch, min_mae))
+            repnet = reparameterize_model(net)
+            torch.save(repnet.state_dict(), cfg.savepath + '/model-'+str(epoch+1)+'.pth')
+
                 
         if (epoch+1) == cfg.epoch:
             repnet = reparameterize_model(net)
-            torch.save(repnet.state_dict(), cfg.savepath+'/model-'+str(epoch+1)+'.pth')
+            torch.save(repnet.state_dict(), cfg.savepath+ '/model-'+str(epoch+1)+'.pth')
             
 
 if __name__=='__main__':
